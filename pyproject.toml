@@ -1,0 +1,11 @@
+[project]
+name = "tb2j_workflow"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "mp-api>=0.46.4",
+    "pymatgen>=2026.5.4",
+    "tb2j>=0.9.20",
+]
