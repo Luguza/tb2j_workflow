@@ -1863,7 +1863,7 @@ wheels = [
 [[package]]
 name = "tb2j-workflow"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "mp-api" },
     { name = "pymatgen" },

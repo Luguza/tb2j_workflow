@@ -9,3 +9,13 @@ dependencies = [
     "pymatgen>=2026.5.4",
     "tb2j>=0.9.20",
 ]
+
+[project.scripts]
+gen-scf = "tb2j_workflow.scf.generate_scf_input:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tb2j_workflow"]
