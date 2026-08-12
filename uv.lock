@@ -1865,6 +1865,7 @@ name = "tb2j-workflow"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "matplotlib" },
     { name = "mp-api" },
     { name = "pymatgen" },
     { name = "tb2j" },
@@ -1872,6 +1873,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "matplotlib", specifier = ">=3.10" },
     { name = "mp-api", specifier = ">=0.46.4" },
     { name = "pymatgen", specifier = ">=2026.5.4" },
     { name = "tb2j", specifier = ">=0.9.20" },
