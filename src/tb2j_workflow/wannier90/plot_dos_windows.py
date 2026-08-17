@@ -73,6 +73,13 @@ def plot_dos_windows(
     elements = sorted(element_dos, key=lambda element: element.symbol)
     spin_polarised = len(vasprun.eigenvalues) > 1
 
+    # The total DOS sits behind every panel as a reference for where the
+    # element contributes relative to everything else. It is several times
+    # larger than any single element, so it is rescaled to each panel rather
+    # than flattening the curve the panel is actually about.
+    total_densities = complete_dos.densities
+    total_peak = max(float(densities[inside].max()) for densities in total_densities.values())
+
     figure, axes = plt.subplots(
         len(elements),
         1,
@@ -86,7 +93,20 @@ def plot_dos_windows(
         symbol = element.symbol
         spd = complete_dos.get_element_spd_dos(element)
 
-        peak = 0.0
+        peak = max(float(densities[inside].max()) for densities in element_dos[element].densities.values())
+
+        scale = peak / total_peak if total_peak > 0.0 else 0.0
+        for spin, densities in total_densities.items():
+            sign = 1.0 if spin is Spin.up else -1.0
+            axis.fill_between(
+                energies[inside],
+                0.0,
+                sign * scale * densities[inside],
+                color="0.85",
+                linewidth=0.0,
+                zorder=0,
+            )
+
         for orbital_type, dos in spd.items():
             orbital = orbital_type.name
             if orbital not in highlighted.get(symbol, []):
@@ -106,7 +126,6 @@ def plot_dos_windows(
         for spin, densities in element_dos[element].densities.items():
             sign = 1.0 if spin is Spin.up else -1.0
             axis.plot(energies[inside], sign * densities[inside], color="0.3", linewidth=0.8)
-            peak = max(peak, float(densities[inside].max()))
 
         axis.set_ylim(-1.1 * peak if spin_polarised else 0.0, 1.1 * peak)
         axis.set_ylabel(f"{symbol} DOS\n(states/eV)")
@@ -125,6 +144,7 @@ def plot_dos_windows(
     axes[-1].set_xlabel("E (eV)")
 
     window_handles = [
+        plt.Rectangle((0, 0), 1, 1, color="0.85", label="total DOS (scaled per panel)"),
         plt.Line2D([], [], color="black", linestyle=":", label=f"$E_F$ = {efermi:.2f} eV"),
         plt.Line2D([], [], color="tab:red", linestyle="--", label=f"dis_froz_max = {dis_froz_max:.2f} eV"),
         plt.Line2D([], [], color="tab:blue", linestyle="-.", label=f"dis_win_max = {dis_win_max:.2f} eV"),
@@ -133,7 +153,7 @@ def plot_dos_windows(
         handles=window_handles,
         loc="upper center",
         bbox_to_anchor=(0.5, 0.955),
-        ncol=3,
+        ncol=4,
         frameon=False,
         fontsize="small",
     )

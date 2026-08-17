@@ -280,6 +280,7 @@ def write_sbatch_script(output_dir: Path, args: Namespace) -> Path:
         ntasks_per_node=args.ntasks_per_node,
         time=args.time,
         vasp_module=args.vasp_module,
+        wannier90_module=args.wannier90_module,
         vasp_symmetry=args.vasp_symmetry,
         output_dir=output_dir.resolve(),
     )
@@ -310,6 +311,7 @@ def cli() -> Namespace:
     parser.add_argument("--ntasks-per-node", type=int, default=24, help="MPI tasks per node (default: 24)")
     parser.add_argument("--time", default="02:00:00", help="Wall-clock time limit, SLURM format (default: 02:00:00)")
     parser.add_argument("--vasp-module", default="chem/vasp/6.4.3", help="Environment module to load for VASP")
+    parser.add_argument("--wannier90-module", default="chem/quantum_espresso/7.1", help="Environment module providing wannier90.x (default: chem/quantum_espresso/7.1)")
     parser.add_argument("--vasp-symmetry", choices=["std", "gam", "ncl"], default="std", help="VASP binary flavour to run (default: std)")
     return parser.parse_args()
 

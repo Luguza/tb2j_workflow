@@ -7,13 +7,30 @@ Project structure, then feed the output into Wannier90 and .
 
 `gen-wannier90 <mp-id>` reads a finished SCF run and writes a non-self-consistent
 VASP run (`ICHARG=11` off the SCF `CHGCAR`, `ISYM=-1` for the full k-grid) with
-`LWANNIER90=.TRUE.`, so VASP drives Wannier90 in-process and writes the
-`*_hr.dat` / `*_centres.xyz` files that `wann2J.py` consumes.
+`LWANNIER90=.TRUE.`, followed by the Wannier90 run that turns its output into
+the `*_hr.dat` / `*_centres.xyz` files `wann2J.py` consumes.
 
-This needs the VASP build that is linked against the Wannier90 library, which on
-this cluster is the `Wan90` flavour of the `chem/vasp` module — the generated
-`submit.sh` calls `vasp -f Wan90 -s std`. The plain `vasp` binary would silently
-ignore `LWANNIER90`.
+Both halves are needed, because `LWANNIER90` does far less than its name
+suggests. The VASP side needs the build linked against the Wannier90 library,
+which on this cluster is the `Wan90` flavour of the `chem/vasp` module — the
+generated `submit.sh` calls `vasp -f Wan90 -s std`, and the plain `vasp` binary
+would silently ignore `LWANNIER90`. But that build only calls `wannier_setup`,
+writes the overlap and projection matrices (`wannier90.{1,2}.{amn,mmn,eig}`)
+and does a one-shot SVD; it never calls `wannier_run`. Left there, the run
+produces no Hamiltonian at all, and the failure only surfaces one stage later
+as a missing `_hr.dat`.
+
+So `submit.sh` goes on to run `wannier90.x` over those matrices, once per spin
+channel. There is no standalone wannier90 module on this cluster, but
+`chem/quantum_espresso/7.1` bundles `wannier90.x` 3.1.0 — the same version the
+`Wan90` VASP build was linked against (`--wannier90-module` overrides it). The
+per-spin seednames are VASP's spin index 1 → `wannier90.up`, 2 → `wannier90.dn`,
+which is what the TB2J stage looks for. Each standalone run reuses the
+`wannier90.win` VASP wrote verbatim: that file already carries the settings
+passed in through `WANNIER90_WIN` plus the cell, atoms, k-points and `num_bands`
+VASP generated, and reusing it is what keeps `num_bands` honest — VASP rounds
+`NBANDS` up to a multiple of the rank count, so the matrices on disk have more
+bands than the INCAR asked for.
 
 Nothing has to be chosen per material:
 
@@ -94,8 +111,11 @@ Everything `wann2J.py` needs comes out of the wannierisation directory:
   vectors inside the Wannier supercell that this mesh defines, so J(R) beyond
   it is computed from padding rather than data and shows up as long-range tails
   that look like physics. `--kmesh` overrides it for a convergence check.
-* **File prefixes** `wannier90.up` / `wannier90.dn`, which is what VASP names
-  the per-spin Wannier files of an `ISPIN=2` run — the same defaults TB2J uses.
+* **File prefixes** `wannier90.up` / `wannier90.dn`, the seednames the
+  wannierisation stage gives the two spin channels — and the same defaults TB2J
+  uses. Note these are not VASP's own names: VASP writes `wannier90.1.*` and
+  `wannier90.2.*`, which the wannierisation stage maps to `up` / `dn` before
+  calling `wannier90.x`.
 
 The stage refuses to write a script for an `ISPIN=1` run (no spin splitting to
 extract exchange from) and for a wannierisation that stopped before writing
