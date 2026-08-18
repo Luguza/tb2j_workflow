@@ -23,3 +23,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tb2j_workflow"]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.2",
+]
