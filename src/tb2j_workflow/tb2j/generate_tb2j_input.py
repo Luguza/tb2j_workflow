@@ -21,8 +21,9 @@ chosen per material:
   real-space vectors inside the Wannier supercell that this mesh defines, so a
   denser mesh would produce J(R) at vectors where the Hamiltonian is padding
   rather than data - long-range tails that look like physics but are not.
-* ``--prefix_up`` / ``--prefix_down`` are the ``wannier90.up`` /
-  ``wannier90.dn`` files VASP writes for an ISPIN=2 wannierisation.
+* ``--prefix_up`` / ``--prefix_down`` are the ``wannier90.1`` /
+  ``wannier90.2`` files VASP writes for an ISPIN=2 wannierisation, spin index
+  1 being up and 2 down.
 """
 
 import argparse
@@ -36,10 +37,12 @@ from pymatgen.io.vasp.outputs import Vasprun
 
 from ..sbatch_templates import TB2J_TEMPLATE as SBATCH_TEMPLATE
 
-# Prefixes VASP gives the per-spin Wannier files of an ISPIN=2 run with
-# LWANNIER90=.TRUE.; they are also wann2J.py's defaults.
-PREFIX_UP = "wannier90.up"
-PREFIX_DN = "wannier90.dn"
+# Seednames VASP gives the two spin channels of an ISPIN=2 run with
+# LWANNIER90_RUN=.TRUE.: spin index 1 is up, 2 is down. These are not
+# wann2J.py's own defaults (wannier90.up / wannier90.dn), so build_command
+# always passes them explicitly.
+PREFIX_UP = "wannier90.1"
+PREFIX_DN = "wannier90.2"
 
 
 class WannierError(RuntimeError):

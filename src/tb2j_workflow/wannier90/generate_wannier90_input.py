@@ -3,9 +3,10 @@
 
 Second step of the TB2J workflow: take the output of the SCF stage and set up
 a non-self-consistent run (ICHARG=11, restarting from the SCF CHGCAR) with
-LWANNIER90=.TRUE., so that VASP builds the maximally localised Wannier
-functions in-process and writes the ``*_hr.dat`` / ``*_centres.xyz`` files
-that TB2J's ``wann2J.py`` reads.
+LWANNIER90=.TRUE. and LWANNIER90_RUN=.TRUE., so that VASP builds the
+maximally localised Wannier functions in-process -- once per spin channel --
+and writes the ``*_hr.dat`` / ``*_centres.xyz`` files that TB2J's
+``wann2J.py`` reads.
 
 Everything is derived from the SCF directory so that no per-material input is
 needed:
@@ -250,6 +251,10 @@ def build_incar(scf_incar: Incar, nbands: int, args: Namespace) -> Incar:
             "NELM": args.nelm,
             "EDIFF": args.ediff,
             "LWANNIER90": True,
+            # Without this VASP stops after wannier_setup and writes no
+            # Hamiltonian at all; the failure would only surface one stage
+            # later as a missing _hr.dat.
+            "LWANNIER90_RUN": True,
             "LWAVE": False,
             "LCHARG": False,
         }
@@ -280,7 +285,6 @@ def write_sbatch_script(output_dir: Path, args: Namespace) -> Path:
         ntasks_per_node=args.ntasks_per_node,
         time=args.time,
         vasp_module=args.vasp_module,
-        wannier90_module=args.wannier90_module,
         vasp_symmetry=args.vasp_symmetry,
         output_dir=output_dir.resolve(),
     )
@@ -311,7 +315,6 @@ def cli() -> Namespace:
     parser.add_argument("--ntasks-per-node", type=int, default=24, help="MPI tasks per node (default: 24)")
     parser.add_argument("--time", default="02:00:00", help="Wall-clock time limit, SLURM format (default: 02:00:00)")
     parser.add_argument("--vasp-module", default="chem/vasp/6.4.3", help="Environment module to load for VASP")
-    parser.add_argument("--wannier90-module", default="chem/quantum_espresso/7.1", help="Environment module providing wannier90.x (default: chem/quantum_espresso/7.1)")
     parser.add_argument("--vasp-symmetry", choices=["std", "gam", "ncl"], default="std", help="VASP binary flavour to run (default: std)")
     return parser.parse_args()
 

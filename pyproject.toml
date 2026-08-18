@@ -15,6 +15,7 @@ dependencies = [
 gen-scf = "tb2j_workflow.scf.generate_scf_input:main"
 gen-w90 = "tb2j_workflow.wannier90.generate_wannier90_input:main"
 gen-tb2j = "tb2j_workflow.tb2j.generate_tb2j_input:main"
+gen-vampire = "tb2j_workflow.vampire.generate_vampire_input:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -1,36 +1,34 @@
 # tb2j_workflow
 
 TB2J exchange-parameter workflow: generate VASP SCF inputs for a Materials
-Project structure, then feed the output into Wannier90 and .
+Project structure, then feed the output into Wannier90, TB2J and Vampire.
 
 ## Wannierisation stage
 
 `gen-wannier90 <mp-id>` reads a finished SCF run and writes a non-self-consistent
 VASP run (`ICHARG=11` off the SCF `CHGCAR`, `ISYM=-1` for the full k-grid) with
-`LWANNIER90=.TRUE.`, followed by the Wannier90 run that turns its output into
-the `*_hr.dat` / `*_centres.xyz` files `wann2J.py` consumes.
+`LWANNIER90=.TRUE.` and `LWANNIER90_RUN=.TRUE.`, which produces the
+`*_hr.dat` / `*_centres.xyz` files `wann2J.py` consumes in a single job.
 
-Both halves are needed, because `LWANNIER90` does far less than its name
-suggests. The VASP side needs the build linked against the Wannier90 library,
-which on this cluster is the `Wan90` flavour of the `chem/vasp` module — the
-generated `submit.sh` calls `vasp -f Wan90 -s std`, and the plain `vasp` binary
-would silently ignore `LWANNIER90`. But that build only calls `wannier_setup`,
-writes the overlap and projection matrices (`wannier90.{1,2}.{amn,mmn,eig}`)
-and does a one-shot SVD; it never calls `wannier_run`. Left there, the run
-produces no Hamiltonian at all, and the failure only surfaces one stage later
-as a missing `_hr.dat`.
+Both tags are needed, because `LWANNIER90` on its own does far less than its
+name suggests: it calls `wannier_setup`, writes the overlap and projection
+matrices and does a one-shot SVD, but never calls `wannier_run`, so the run
+produces no Hamiltonian at all and the failure surfaces one stage later as a
+missing `_hr.dat`. `LWANNIER90_RUN` is what drives the library through
+`wannier_run`, once per spin channel. Both need the VASP build linked against
+the Wannier90 library, which on this cluster is the `Wan90` flavour of the
+`chem/vasp` module — the generated `submit.sh` calls `vasp -f Wan90 -s std`,
+and the plain `vasp` binary would silently ignore both tags.
 
-So `submit.sh` goes on to run `wannier90.x` over those matrices, once per spin
-channel. There is no standalone wannier90 module on this cluster, but
-`chem/quantum_espresso/7.1` bundles `wannier90.x` 3.1.0 — the same version the
-`Wan90` VASP build was linked against (`--wannier90-module` overrides it). The
-per-spin seednames are VASP's spin index 1 → `wannier90.up`, 2 → `wannier90.dn`,
-which is what the TB2J stage looks for. Each standalone run reuses the
-`wannier90.win` VASP wrote verbatim: that file already carries the settings
-passed in through `WANNIER90_WIN` plus the cell, atoms, k-points and `num_bands`
-VASP generated, and reusing it is what keeps `num_bands` honest — VASP rounds
-`NBANDS` up to a multiple of the rank count, so the matrices on disk have more
-bands than the INCAR asked for.
+VASP names the two spin channels by index: `wannier90.1` for spin up and
+`wannier90.2` for spin down, each with its own `.win`, `.wout`, `.chk`,
+`_hr.dat` and `_centres.xyz`. Those seednames are what the TB2J stage looks
+for. Note that `LWANNIER90_RUN` hands the overlap and projection matrices to
+`wannier_run` in memory rather than writing them, so a wannierisation that
+fails leaves nothing on disk to retry from — re-running the stage repeats the
+NSCF, which is the cheap part of the job. Adding `LWRITE_MMN_AMN=.TRUE.` via
+`--incar` keeps the matrices if you want to iterate on the windows with a
+standalone `wannier90.x` instead.
 
 Nothing has to be chosen per material:
 
@@ -111,16 +109,66 @@ Everything `wann2J.py` needs comes out of the wannierisation directory:
   vectors inside the Wannier supercell that this mesh defines, so J(R) beyond
   it is computed from padding rather than data and shows up as long-range tails
   that look like physics. `--kmesh` overrides it for a convergence check.
-* **File prefixes** `wannier90.up` / `wannier90.dn`, the seednames the
-  wannierisation stage gives the two spin channels — and the same defaults TB2J
-  uses. Note these are not VASP's own names: VASP writes `wannier90.1.*` and
-  `wannier90.2.*`, which the wannierisation stage maps to `up` / `dn` before
-  calling `wannier90.x`.
+* **File prefixes** `wannier90.1` / `wannier90.2`, the seednames VASP gives the
+  two spin channels, 1 being up and 2 down. These are not `wann2J.py`'s own
+  defaults (`wannier90.up` / `wannier90.dn`), so the generated command always
+  passes `--prefix_up` / `--prefix_down` explicitly.
 
 The stage refuses to write a script for an `ISPIN=1` run (no spin splitting to
 extract exchange from) and for a wannierisation that stopped before writing
 `*_hr.dat` or `*_centres.xyz` for both spins, rather than leaving the failure
 to be discovered in the queue.
+
+## Vampire stage
+
+`gen-vampire <mp-id>` reads a finished TB2J run and writes the atomistic spin
+dynamics run that turns its exchange parameters into an ordering temperature.
+TB2J already writes a complete Vampire model next to its own results, so the
+stage copies `TB2J_results/Vampire/vampire.UCF` (the unit cell and every J(R)
+as a 3x3 tensor) and `vampire.mat` (moment, damping and initial spin direction
+per sublattice) over unchanged. Only `input`, the simulation protocol, is
+written here, because that is the part TB2J fills in with placeholders.
+
+`submit.sh` runs `vampire-parallel` under `srun`. Vampire is a local build in
+the workspace rather than a cluster module, linked against Intel MPI 2021.13,
+so the script loads `compiler/intel/2024.2.1 mpi/impi/2021.13.1` to match; a
+mismatched libmpi fails at startup, and `--vampire-binary` / `--modules`
+override both. Vampire takes no arguments — it reads `input`, `vampire.mat`
+and `vampire.UCF` out of the working directory and writes `output` and `log`
+next to them.
+
+What the generated `input` changes relative to TB2J's:
+
+* **Mean rather than instantaneous magnetisation.** Vampire's
+  `curie-temperature` program equilibrates, resets its statistics, averages
+  over the loop and calls its output routine once, per temperature. TB2J asks
+  for `output:material-magnetisation`, which is the instantaneous value of
+  whatever the final step happened to land on — thermal noise the size of the
+  effect being measured. `output:material-mean-magnetisation-length` is the
+  average over the same loop, and gives one clean row per temperature.
+* **Per sublattice.** The moments TB2J writes all start along +z, so an
+  antiferromagnetic set of J relaxes into its Néel state during equilibration
+  and the *total* magnetisation is ~0 at every temperature — the sublattices
+  are what stays finite below the ordering temperature.
+  `output:mean-magnetisation-length` is kept as the last column anyway,
+  precisely because that contrast is what says which of the two orderings the
+  exchange parameters describe.
+* **Sweep and box are flags** (`--temperature-min/-max/-step`,
+  `--equilibration-steps`, `--loop-steps`, `--system-size`) rather than the
+  0–1000 K, 15 nm defaults baked into TB2J's file. The cell repeat lengths are
+  read out of the UCF header instead of being recomputed from the structure,
+  so the geometry Vampire builds is the one the interactions were tabulated
+  for.
+
+So `output` has one row per temperature: temperature, then one column per
+material in `vampire.mat` order, then the whole-system magnetisation. Read the
+ordering temperature off the sublattice columns.
+
+One artefact to expect at the bottom of the sweep: a collinear start with
+collinear exchange fields has exactly zero LLG torque, so at T=0 nothing moves
+and the first row reports the ferromagnetic starting state (all columns 1.0)
+even for an antiferromagnet. Thermal noise breaks that at the first finite
+temperature. It is the T=0 point only; `--temperature-min` can skip it.
 
 ## VASP POTCAR setup (pymatgen)
 
