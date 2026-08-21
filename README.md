@@ -160,15 +160,83 @@ What the generated `input` changes relative to TB2J's:
   so the geometry Vampire builds is the one the interactions were tabulated
   for.
 
+* **Susceptibility alongside it.** `output:mean-susceptibility` adds chi_x,
+  chi_y, chi_z and chi_m, the fluctuation of the system magnetisation over the
+  same averaging loop. Its peak, not any feature of M(T), is what the
+  visualisation stage reads the ordering temperature off: the magnetisation
+  only bends over near the transition and where it "reaches zero" depends on
+  the noise floor, whereas chi diverges at the transition.
+
 So `output` has one row per temperature: temperature, then one column per
-material in `vampire.mat` order, then the whole-system magnetisation. Read the
-ordering temperature off the sublattice columns.
+material in `vampire.mat` order, then the whole-system magnetisation, then
+chi_x, chi_y, chi_z, chi_m. Read the ordering temperature off the sublattice
+columns and the susceptibility peak.
+
+One thing to set per material rather than accept the default: `1/chi` is only
+a straight line well above the transition, so a Curie-Weiss fit needs the sweep
+to reach far past it — roughly `--temperature-max` of three times the expected
+ordering temperature. The 1000 K default stops just above the transition of a
+typical oxide and leaves nothing to fit. Wall time scales with the number of
+temperatures, so widening the sweep at a fixed `--temperature-step` wants a
+matching `--time`.
 
 One artefact to expect at the bottom of the sweep: a collinear start with
 collinear exchange fields has exactly zero LLG torque, so at T=0 nothing moves
 and the first row reports the ferromagnetic starting state (all columns 1.0)
 even for an antiferromagnet. Thermal noise breaks that at the first finite
 temperature. It is the T=0 point only; `--temperature-min` can skip it.
+
+## Visualisation stage
+
+`viz-results <mp-id>` reads the two stages that produce results and writes four
+figures to `work/<mp-id>/results/`. It reads files rather than a database, so it
+runs against any stage directory and re-running it is free.
+
+From `work/<mp-id>/vampire/` — the sweep in `output`, normalised against the
+saturation moments in `vampire.mat`:
+
+* `magnetization.png` — M(T) per sublattice and for the whole system. The
+  contrast between them is what identifies the ordering: both finite below the
+  transition is a ferromagnet, sublattices finite while the total sits at zero
+  is an antiferromagnet. The system curve's T=0 point is dropped, since that is
+  the untorqued starting state described above and not a physical value.
+* `susceptibility.png` — chi_m with its spatial components, peaking at the
+  transition.
+* `inverse_susceptibility.png` — 1/chi_m with a Curie-Weiss fit of its
+  paramagnetic tail, extrapolated to the intercept theta. The fit window ends
+  at the top of the sweep and grows downwards for as long as the data stays
+  linear against its own noise, and never reaches below 1.5x the ordering
+  temperature — the critical region bends 1/chi over long before the transition
+  itself, and a window that dips into it drags theta towards the Monte Carlo
+  value, which would make the two agree for the wrong reason. A sweep that
+  stops too soon gets no fit and says so.
+
+From `work/<mp-id>/tb2j/TB2J_results/TB2J.pickle`, read back through TB2J's own
+`SpinIO`:
+
+* `exchange_graph.png` — the magnetic sites joined by their couplings, i.e. the
+  exchange parameters *before* Vampire integrates them, so a transition
+  temperature that looks wrong can be traced to the J behind it. Each edge is
+  labelled with its own J_iso in meV under TB2J's convention
+  `E = -sum_ij J_ij S_i . S_j` with unit spin vectors, so `J < 0` is
+  antiferromagnetic; colour encodes the neighbour shell, and the legend gives
+  each shell's distance and how many bonds it covers. The nodes carry no spin
+  direction on purpose — the magnetic force theorem takes derivatives around one
+  reference state in which every moment points the same way, so the sign of each
+  coupling is the only magnetic information in the model.
+
+The graph needs a cutoff to be readable at all: TB2J tabulates a coupling for
+every site pair inside the Wannier supercell, thousands of which are numerical
+noise several angstrom out (mp-19770: 32 of 3916 are above 0.5 meV). `--j-min`
+sets it, and the number dropped is printed rather than hidden, because a
+material whose couplings do not fall off is telling you about the Wannier
+Hamiltonian rather than about its magnetism.
+
+Sweeps written before `gen-vampire` requested `output:mean-susceptibility` have
+no chi columns. That is detected from the column count: the two susceptibility
+figures are skipped and the ordering temperature falls back to the steepest
+point of the sublattice magnetisation, which is biased low and can be no finer
+than the temperature step, so it is labelled as an estimate in the figure.
 
 ## VASP POTCAR setup (pymatgen)
 

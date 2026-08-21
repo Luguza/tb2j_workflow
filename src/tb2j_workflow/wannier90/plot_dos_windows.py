@@ -47,7 +47,9 @@ def view_bottom(energies, total_dos, efermi: float, floor: float = 30.0) -> floa
     whatever the settings are, and plotting them squashes the region the
     windows actually cut through into a few pixels.
     """
-    occupied = energies[(total_dos > 1e-3 * total_dos.max()) & (energies > efermi - floor)]
+    occupied = energies[
+        (total_dos > 1e-3 * total_dos.max()) & (energies > efermi - floor)
+    ]
     return float(occupied.min()) - 1.0 if occupied.size else efermi - floor
 
 
@@ -74,11 +76,15 @@ def plot_dos_windows(
     spin_polarised = len(vasprun.eigenvalues) > 1
 
     # The total DOS sits behind every panel as a reference for where the
-    # element contributes relative to everything else. It is several times
-    # larger than any single element, so it is rescaled to each panel rather
-    # than flattening the curve the panel is actually about.
+    # element contributes relative to everything else. It is drawn unscaled on
+    # the same axis as the element it is compared against, so every curve in
+    # the figure is in states/eV and the panels are comparable to each other.
+    # The price is that a species contributing a small share of the total is
+    # correspondingly small in its own panel.
     total_densities = complete_dos.densities
-    total_peak = max(float(densities[inside].max()) for densities in total_densities.values())
+    total_peak = max(
+        float(densities[inside].max()) for densities in total_densities.values()
+    )
 
     figure, axes = plt.subplots(
         len(elements),
@@ -93,15 +99,12 @@ def plot_dos_windows(
         symbol = element.symbol
         spd = complete_dos.get_element_spd_dos(element)
 
-        peak = max(float(densities[inside].max()) for densities in element_dos[element].densities.values())
-
-        scale = peak / total_peak if total_peak > 0.0 else 0.0
         for spin, densities in total_densities.items():
             sign = 1.0 if spin is Spin.up else -1.0
             axis.fill_between(
                 energies[inside],
                 0.0,
-                sign * scale * densities[inside],
+                sign * densities[inside],
                 color="0.85",
                 linewidth=0.0,
                 zorder=0,
@@ -125,17 +128,21 @@ def plot_dos_windows(
 
         for spin, densities in element_dos[element].densities.items():
             sign = 1.0 if spin is Spin.up else -1.0
-            axis.plot(energies[inside], sign * densities[inside], color="0.3", linewidth=0.8)
+            axis.plot(
+                energies[inside], sign * densities[inside], color="0.3", linewidth=0.8
+            )
 
-        axis.set_ylim(-1.1 * peak if spin_polarised else 0.0, 1.1 * peak)
-        axis.set_ylabel(f"{symbol} DOS\n(states/eV)")
+        axis.set_ylim(-1.1 * total_peak if spin_polarised else 0.0, 1.1 * total_peak)
+        axis.set_ylabel(f"{symbol}\nDOS (states/eV)")
         axis.legend(loc="upper right", fontsize="small", frameon=False)
         if spin_polarised:
             axis.axhline(0.0, color="0.3", linewidth=0.8)
 
         # The frozen window has no lower bound, so everything left of the red
         # line is reproduced exactly; the shading makes that immediate.
-        axis.axvspan(energy_min, dis_froz_max, color="tab:red", alpha=0.05, linewidth=0.0)
+        axis.axvspan(
+            energy_min, dis_froz_max, color="tab:red", alpha=0.05, linewidth=0.0
+        )
         axis.axvline(efermi, color="black", linestyle=":", linewidth=1.2)
         axis.axvline(dis_froz_max, color="tab:red", linestyle="--", linewidth=1.2)
         axis.axvline(dis_win_max, color="tab:blue", linestyle="-.", linewidth=1.2)
@@ -144,10 +151,24 @@ def plot_dos_windows(
     axes[-1].set_xlabel("E (eV)")
 
     window_handles = [
-        plt.Rectangle((0, 0), 1, 1, color="0.85", label="total DOS (scaled per panel)"),
-        plt.Line2D([], [], color="black", linestyle=":", label=f"$E_F$ = {efermi:.2f} eV"),
-        plt.Line2D([], [], color="tab:red", linestyle="--", label=f"dis_froz_max = {dis_froz_max:.2f} eV"),
-        plt.Line2D([], [], color="tab:blue", linestyle="-.", label=f"dis_win_max = {dis_win_max:.2f} eV"),
+        plt.Rectangle((0, 0), 1, 1, color="0.85", label="total DOS"),
+        plt.Line2D(
+            [], [], color="black", linestyle=":", label=f"$E_F$ = {efermi:.2f} eV"
+        ),
+        plt.Line2D(
+            [],
+            [],
+            color="tab:red",
+            linestyle="--",
+            label=f"dis_froz_max = {dis_froz_max:.2f} eV",
+        ),
+        plt.Line2D(
+            [],
+            [],
+            color="tab:blue",
+            linestyle="-.",
+            label=f"dis_win_max = {dis_win_max:.2f} eV",
+        ),
     ]
     figure.legend(
         handles=window_handles,
